@@ -7,6 +7,59 @@
 # your Debian/Ubuntu/CentOS box. It has been designed to be as unobtrusive and
 # universal as possible.
 
+###################
+#### Variables ####
+###################
+beQuiet=false
+unattended=false
+
+###################
+#### FUNCTIONS ####
+###################
+
+function newclient () {
+	# Generates the custom client.ovpn
+	cp /etc/openvpn/client-common.txt ~/$1.ovpn
+	echo "<ca>" >> ~/$1.ovpn
+	cat /etc/openvpn/easy-rsa/pki/ca.crt >> ~/$1.ovpn
+	echo "</ca>" >> ~/$1.ovpn
+	echo "<cert>" >> ~/$1.ovpn
+	cat /etc/openvpn/easy-rsa/pki/issued/$1.crt >> ~/$1.ovpn
+	echo "</cert>" >> ~/$1.ovpn
+	echo "<key>" >> ~/$1.ovpn
+	cat /etc/openvpn/easy-rsa/pki/private/$1.key >> ~/$1.ovpn
+	echo "</key>" >> ~/$1.ovpn
+	echo "<tls-auth>" >> ~/$1.ovpn
+	cat /etc/openvpn/ta.key >> ~/$1.ovpn
+	echo "</tls-auth>" >> ~/$1.ovpn
+}
+
+function echobravo(){
+	# $1 is the message to echo
+	if [ "$beQuiet" = false ]; then
+		echo "$1"
+	fi
+}
+
+function indexOf(){ 
+	# $1 = search string
+	# $2 = string or char to find
+	# Returns -1 if not found
+	x="${1%%$2*}"
+	[[ $x = $1 ]] && echo -1 || echo ${#x}
+}
+
+function runLoudOrSilent() {
+	if [ "$beQuiet" = true ]; then
+		"$@" > /dev/null 2>&1
+    else
+		"$@"
+    fi
+}
+
+###################
+####  MAIN APP ####
+###################
 
 # Detect Debian users running the script with "sh" instead of bash
 if readlink /proc/$$/exe | grep -qs "dash"; then
@@ -42,22 +95,32 @@ else
 	exit 5
 fi
 
-newclient () {
-	# Generates the custom client.ovpn
-	cp /etc/openvpn/client-common.txt ~/$1.ovpn
-	echo "<ca>" >> ~/$1.ovpn
-	cat /etc/openvpn/easy-rsa/pki/ca.crt >> ~/$1.ovpn
-	echo "</ca>" >> ~/$1.ovpn
-	echo "<cert>" >> ~/$1.ovpn
-	cat /etc/openvpn/easy-rsa/pki/issued/$1.crt >> ~/$1.ovpn
-	echo "</cert>" >> ~/$1.ovpn
-	echo "<key>" >> ~/$1.ovpn
-	cat /etc/openvpn/easy-rsa/pki/private/$1.key >> ~/$1.ovpn
-	echo "</key>" >> ~/$1.ovpn
-	echo "<tls-auth>" >> ~/$1.ovpn
-	cat /etc/openvpn/ta.key >> ~/$1.ovpn
-	echo "</tls-auth>" >> ~/$1.ovpn
-}
+# Get parameters
+for varCheck in "$@"
+do
+    if [ "$varCheck" == "silent" ]; then
+		beQuiet=true
+		
+    fi
+    
+    if [ "$varCheck" == "unattended" ]; then
+		unattended=true
+    fi
+    
+    posOfChar=$(indexOf "$varCheck" "=")
+	if [ "$posOfChar" -ge "0" ]; then
+		var=$(echo ${varCheck:0:$posOfChar})
+		value=$(echo ${varCheck:$((posOfChar+1))})
+		if [ "$var" == "option" ]; then
+			option="${value}"
+		elif [ "$var" == "client" ]; then
+			CLIENT="${value}"
+		fi
+	fi
+    
+done
+
+
 
 # Try to get our IP from the system and fallback to the Internet.
 # I do this to make the script compatible with NATed servers (lowendspirit.com)
@@ -71,26 +134,32 @@ if [[ -e /etc/openvpn/server.conf ]]; then
 	while :
 	do
 	clear
-		echo "Looks like OpenVPN is already installed"
-		echo ""
-		echo "What do you want to do?"
-		echo "   1) Add a new user"
-		echo "   2) Revoke an existing user"
-		echo "   3) Remove OpenVPN"
-		echo "   4) Exit"
-		read -p "Select an option [1-4]: " option
+		if [ -z "$option" ]; then
+			echo "Looks like OpenVPN is already installed"
+			echo ""
+			echo "What do you want to do?"
+			echo "   1) Add a new user"
+			echo "   2) Revoke an existing user"
+			echo "   3) Remove OpenVPN"
+			echo "   4) Exit"
+			read -p "Select an option [1-4]: " option
+		fi
 		case $option in
 			1) 
-			echo ""
-			echo "Tell me a name for the client certificate"
-			echo "Please, use one word only, no special characters"
-			read -p "Client name: " -e -i client CLIENT
+			if [ "$unattended" = false ] || [ -z "$CLIENT" ]; then 
+				echo ""
+				echo "Tell me a name for the client certificate"
+				echo "Please, use one word only, no special characters"
+				read -p "Client name: " -e -i client CLIENT
+			fi
 			cd /etc/openvpn/easy-rsa/
-			./easyrsa build-client-full $CLIENT nopass
+			runLoudOrSilent ./easyrsa build-client-full $CLIENT nopass
 			# Generates the custom client.ovpn
 			newclient "$CLIENT"
-			echo ""
-			echo "Client $CLIENT added, configuration is available at" ~/"$CLIENT.ovpn"
+			echobravo ""
+			echobravo "Client $CLIENT added, configuration is available at ~/\"${CLIENT}.ovpn\""
+			contents=$(cat "${HOME}/${CLIENT}.ovpn")
+			echo -n "$contents"
 			exit
 			;;
 			2)
@@ -98,31 +167,36 @@ if [[ -e /etc/openvpn/server.conf ]]; then
 			# ...but what can I say, I want some sleep too
 			NUMBEROFCLIENTS=$(tail -n +2 /etc/openvpn/easy-rsa/pki/index.txt | grep -c "^V")
 			if [[ "$NUMBEROFCLIENTS" = '0' ]]; then
-				echo ""
-				echo "You have no existing clients!"
+				echobravo ""
+				echobravo "You have no existing clients!"
 				exit 6
 			fi
-			echo ""
-			echo "Select the existing client certificate you want to revoke"
-			tail -n +2 /etc/openvpn/easy-rsa/pki/index.txt | grep "^V" | cut -d '=' -f 2 | nl -s ') '
-			if [[ "$NUMBEROFCLIENTS" = '1' ]]; then
-				read -p "Select one client [1]: " CLIENTNUMBER
-			else
-				read -p "Select one client [1-$NUMBEROFCLIENTS]: " CLIENTNUMBER
+			if [ "$unattended" = false ] || [ -z "$CLIENT" ]; then 
+				echo ""
+				echo "Select the existing client certificate you want to revoke"
+				tail -n +2 /etc/openvpn/easy-rsa/pki/index.txt | grep "^V" | cut -d '=' -f 2 | nl -s ') '
+				if [[ "$NUMBEROFCLIENTS" = '1' ]]; then
+					read -p "Select one client [1]: " CLIENTNUMBER
+				else
+					read -p "Select one client [1-$NUMBEROFCLIENTS]: " CLIENTNUMBER
+				fi
+				CLIENT=$(tail -n +2 /etc/openvpn/easy-rsa/pki/index.txt | grep "^V" | cut -d '=' -f 2 | sed -n "$CLIENTNUMBER"p)
 			fi
-			CLIENT=$(tail -n +2 /etc/openvpn/easy-rsa/pki/index.txt | grep "^V" | cut -d '=' -f 2 | sed -n "$CLIENTNUMBER"p)
 			cd /etc/openvpn/easy-rsa/
-			./easyrsa --batch revoke $CLIENT
-			EASYRSA_CRL_DAYS=3650 ./easyrsa gen-crl
-			rm -rf pki/reqs/$CLIENT.req
-			rm -rf pki/private/$CLIENT.key
-			rm -rf pki/issued/$CLIENT.crt
-			rm -rf /etc/openvpn/crl.pem
-			cp /etc/openvpn/easy-rsa/pki/crl.pem /etc/openvpn/crl.pem
+			runLoudOrSilent ./easyrsa --batch revoke $CLIENT
+			runLoudOrSilent EASYRSA_CRL_DAYS=3650 ./easyrsa gen-crl
+			runLoudOrSilent rm -rf pki/reqs/$CLIENT.req
+			runLoudOrSilent rm -rf pki/private/$CLIENT.key
+			runLoudOrSilent rm -rf pki/issued/$CLIENT.crt
+			runLoudOrSilent rm -rf /etc/openvpn/crl.pem
+			runLoudOrSilent cp /etc/openvpn/easy-rsa/pki/crl.pem /etc/openvpn/crl.pem
 			# CRL is read with each client connection, when OpenVPN is dropped to nobody
 			chown nobody:$GROUPNAME /etc/openvpn/crl.pem
-			echo ""
-			echo "Certificate for client $CLIENT revoked"
+			echobravo ""
+			if [ -e "${HOME}/${CLIENT}.ovpn" ]; then
+				rm -rf "${HOME}/${CLIENT}.ovpn"
+			fi
+			echo -n "Certificate for client $CLIENT revoked"
 			exit
 			;;
 			3) 
