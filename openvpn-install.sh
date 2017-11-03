@@ -133,7 +133,7 @@ fi
 if [[ -e /etc/openvpn/server.conf ]]; then
 	while :
 	do
-	clear
+	runLoudOrSilent clear
 		if [ -z "$option" ]; then
 			echo "Looks like OpenVPN is already installed"
 			echo ""
@@ -184,7 +184,8 @@ if [[ -e /etc/openvpn/server.conf ]]; then
 			fi
 			cd /etc/openvpn/easy-rsa/
 			runLoudOrSilent ./easyrsa --batch revoke $CLIENT
-			runLoudOrSilent EASYRSA_CRL_DAYS=3650 ./easyrsa gen-crl
+			EASYRSA_CRL_DAYS=3650
+			runLoudOrSilent ./easyrsa gen-crl
 			runLoudOrSilent rm -rf pki/reqs/$CLIENT.req
 			runLoudOrSilent rm -rf pki/private/$CLIENT.key
 			runLoudOrSilent rm -rf pki/issued/$CLIENT.crt
