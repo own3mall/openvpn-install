@@ -16,9 +16,9 @@ After you have used this script to install openvpn, you can also pass in command
 
 Parameters are:
 
-`silent`
+`silent` (doesn't echo out anything that isn't important)
 
-`unattended` 
+`unattended` (allows you to skip over sections provided required parameters are passed in)
 
 `option=1` (send in 1-4 - 1 is add, 2 is remove, 3 is uninstall openvpn, 4 is exit) 
 
