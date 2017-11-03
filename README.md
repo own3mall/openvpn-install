@@ -10,6 +10,17 @@ Run the script and follow the assistant:
 
 Once it ends, you can run it again to add more users, remove some of them or even completely uninstall OpenVPN.
 
+### Command line parameters
+
+After you have used this script to install openvpn, you can also pass in command-line arguments to automate or silently do things. 
+
+Parameters are:
+
+    -  `silent`
+    -  `unattended` 
+    -  `option=1` (send in 1-4 - 1 is add, 2 is remove, 3 is uninstall openvpn, 4 is exit) 
+    -  `client=nameofclient` (name of client you want to revoke or add)
+
 ### I want to run my own VPN but don't have a server for that
 You can get a little VPS for just $2.99/month at [Bandwagon Host](https://bandwagonhost.com/aff.php?aff=575&pid=43).
 
